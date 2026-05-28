@@ -15,8 +15,10 @@ Help the user find the simplest **single** AI tool that reliably gets their job 
 - **Single-tool bias**: by default recommend ONE tool. Only recommend a combination when (a) the triage table explicitly permits it, or (b) Discovery Mode's 3-axis decision clearly justifies layers (see `references/decision-tree.md` § Route Composition).
 - **Match the user's language**: detect from their first message; never invent Chinese questions for an English user or vice versa.
 - **Never deliver a tool name alone**: every recommendation must include a one-line reason, a ready-to-use artifact (prompt / entry point / handoff), the assumptions you made, and a difficulty rating.
-- **Pre-AI sanity check (Step 0)**: before routing, check whether the task even needs AI. If a 30-line script / SaaS-native AI feature / one-shot prompt covers it, say so first instead of pushing the user through the full tree. See `references/decision-tree.md` § Step 0.
-- **Heavier solutions need higher justification**: Prompt (★) and Browser Agent (★★) need only a confirmed need; Skill (★★★) needs at least monthly recurrence; Coding Agent (★★★~★★★★) needs someone who can review the output; RAG (★★★★) and Workflow (★★★★★) need weekly frequency plus ongoing maintenance capacity.
+- **Pre-AI sanity check (Step 0)**: before routing, check whether the task even needs AI. If a 30-line script / SaaS-native AI feature / **host AI's built-in scheduler (ChatGPT Tasks / 钉钉悟空定时 / 飞书智能伙伴定时 / 豆包定时)** / one-shot prompt covers it, say so first instead of pushing the user through the full tree. See `references/decision-tree.md` § Step 0.
+- **Schedule before Browser Agent / Workflow**: if the task is "fetch public info / summarize / format / push on a schedule", default to the host AI's built-in Scheduled Task (★★) before recommending Browser Agent (★★★) or Workflow (★★★★★). Only escalate when login / complex web interaction / external system writes are required. See `references/decision-tree.md` § Schedule Overlay and `references/triage.md` § Schedule Pre-Check.
+- **Table-first when data lives (or can live) in a table** (v8.2): if the task is "对表格里某列批量做提取/分类/总结/翻译/打标/自定义生成", default to **AI Table fields** (★★) — 飞书多维 AI 字段捷径 / 钉钉 AI 表格 / Notion AI Autofill / Airtable AI fields — before recommending Skill / Workflow / Coding Agent. This includes data currently in Excel/CSV (suggest importing to a host platform). Only escalate when cross-row analysis / external system writes / data exceeds platform limits. See `references/decision-tree.md` § Table Overlay and `references/triage.md` § Table Pre-Check.
+- **Heavier solutions need higher justification**: Prompt (★) and Scheduled AI Task (★★) and **AI Table (★★)** and Browser Agent (★★) need only a confirmed need; Skill (★★★) needs at least monthly recurrence; Coding Agent (★★★~★★★★) needs someone who can review the output; RAG (★★★★) and Workflow (★★★★★) need weekly frequency plus ongoing maintenance capacity.
 - **3 independent axes for routing** (used in Discovery Mode and as the underlying logic for Triage):
   - **Axis A — Execution Environment**: text / browser / code
   - **Axis B — Control Level**: prompt / skill / workflow
@@ -40,10 +42,12 @@ Help the user find the simplest **single** AI tool that reliably gets their job 
    - Q2 频率: 一次性 / 偶尔 / 高频
    - Q3 主要场景: 写字 · 文档表格 · 网页操作 · 数据/程序 · 自动跨多系统 · 不太确定
    Use a single structured multi-question form when the host supports it.
-4. **Turn 3 — Produce recommendation:**
+4. **Turn 3 — Produce recommendation (check pre-checks first, in order):**
+   - Run **Table Pre-Check** on Q1 — if table-related signal hits AND task is "对某列批量做 X" → recommend AI Table directly using the AI Table Sub-template, skip the routing table.
+   - Run **Schedule Pre-Check** on Q1 — if scheduling keyword hits AND task is simple "fetch / summarize / push" → recommend Scheduled AI Task directly using the Scheduled AI Task Sub-template, skip the routing table.
    - Run Knowledge Keyword Auto-detect on Q1.
    - Run High-Risk Keyword Auto-detect on Q1 — if any hit, escalate to Discovery Mode instead of giving a Triage answer.
-   - Look up the Triage Routing Table.
+   - Look up the Triage Routing Table (note: 频率 C 高频 has separate rows for **手动触发** vs **定时推送**; 场景 b 表格 has separate rows for **每行 AI 处理** vs **跨行复杂分析**).
    - Output using the **Newbie Express Output** template from `references/output-templates.md`.
 
 ### Escalated: Discovery Mode
@@ -81,15 +85,17 @@ Then run the full 5-step flow:
 
 ## Decision Summary
 
-Three independent decisions, combined into the final route. Full questions, difficulty gates, and downgrade paths live in `references/decision-tree.md` — load that file before routing.
+Three independent decisions + two cross-cutting overlays, combined into the final route. Full questions, difficulty gates, and downgrade paths live in `references/decision-tree.md` — load that file before routing.
 
 | Axis | Core question | Difficulty range |
 | --- | --- | --- |
-| A. Environment | Where does the work physically happen — text, browser, or code? | ★ → ★★★★ |
+| A. Environment | Where does the work physically happen — text, **table** (v8.2), browser, or code? | ★ → ★★★★ |
 | B. Control | How constrained must the AI be — one-off prompt, reusable skill, or platform-orchestrated workflow? | ★ → ★★★★★ |
-| C. Knowledge | Can references be pasted, or is a RAG / enterprise knowledge layer needed? | — → ★★★★ |
+| K. Knowledge | Can references be pasted, or is a RAG / enterprise knowledge layer needed? | — → ★★★★ |
+| **Overlay: Schedule (v8.1)** | Is the task scheduled / event-triggered? Can the host AI's built-in scheduler carry it? | ★★ → ★★★★★ |
+| **Overlay: Table (v8.2)** | Is the data row × column with similar AI processing per row? | ★★ → ★★★★ |
 
-Final route = A × B × C. Each escalation needs both a need test AND a difficulty justification.
+Final route = A × B × K, then check Schedule and Table overlays which can replace or layer onto the main route. Each escalation needs both a need test AND a difficulty justification.
 
 ## Output Must Include
 
@@ -105,11 +111,11 @@ Final route = A × B × C. Each escalation needs both a need test AND a difficul
 
 ## Reference Loading Guide
 
-- `references/triage.md` — **load first by default** for the 3-question flow, Knowledge auto-detect, and high-risk escalation list.
+- `references/triage.md` — **load first by default** for the 3-question flow, **Table Pre-Check**, **Schedule Pre-Check**, Knowledge auto-detect, and high-risk escalation list.
 - `references/discovery.md` — only in Discovery Mode; weighted confidence rubric, Capability question pool, Edge Cases (4 named scenarios).
-- `references/decision-tree.md` — only in Discovery Mode; Step 0 (does it need AI?), 3-axis model, difficulty gates, route composition table, upgrade/downgrade triggers, Anti-Patterns.
-- `references/enterprise-knowledge-rag.md` — load when Knowledge auto-detect fires or the user mentions internal docs/policies/cases/customer records.
-- `references/output-templates.md` — load when producing the final artifact (Newbie Express by default; Lightweight or Full in Discovery Mode).
+- `references/decision-tree.md` — only in Discovery Mode; Step 0 (does it need AI? / built-in scheduler? / AI Table?), 3-axis model (Axis A now includes **table**), difficulty gates, **Schedule Overlay**, **Table Overlay** (v8.2), route composition table, upgrade/downgrade triggers, 15 Anti-Patterns.
+- `references/enterprise-knowledge-rag.md` — load when Knowledge auto-detect fires or the user mentions internal docs/policies/cases/customer records. Includes a **Data-Form Decision** (v8.2) to avoid pushing structured-table tasks into RAG.
+- `references/output-templates.md` — load when producing the final artifact (Newbie Express by default; Lightweight or Full in Discovery Mode). Sub-templates include **AI Table** (v8.2), **Scheduled AI Task** (v8.1), AI Chat, Skill, Workflow, Workflow with AI Nodes, RAG, Browser Agent, Coding Agent (In-Repo / Greenfield).
 - `references/skill-creation-guide.md` — load only when the chosen route is Skill and the user wants to create the actual skill files.
 - `references/demo-build-branch.md` — **optional extended module**. Load only when the chosen route is Coding Agent AND the user explicitly asks to continue from handoff into full product development. Pick the right sub-route inside (In-Repo Task vs Greenfield Demo).
 - `references/product-demo-templates.md` — **optional extended module**. Load only inside the Greenfield sub-route of `demo-build-branch.md` when full PRD/tech docs are requested.

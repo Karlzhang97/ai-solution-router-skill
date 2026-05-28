@@ -1,5 +1,5 @@
 {
-  "schema_version": "v8",
+  "schema_version": "v8.2",
   "purpose": "Regression test cases for ai-solution-router. Each case lists a real user prompt and the expected routing behavior. Run after any change to SKILL.md / references/ and verify the router still behaves as expected.",
   "scoring_guide": {
     "pass": "Router behaves as described in `expected_behavior` AND uses the templates/refs listed in `must_load_refs`.",
@@ -73,10 +73,11 @@
     },
     {
       "id": 9,
-      "tags": ["high-freq", "browser-agent"],
+      "tags": ["high-freq", "scheduled-task", "schedule-pre-check"],
       "prompt": "我每周要看 20 篇行业新闻，挑出 3 篇做摘要发到团队周报里。",
-      "expected_behavior": "Triage 流。Q2=高频，Q3=网页操作。最终推 Skill + Browser Agent 组合（高频固定流程值得包装成 Skill）。难度 ★★★。Operator=我自己 → 不升级到 Bot。输出含'什么时候该换路线'：登录平台 → Coding；月频 → 降回 Browser Agent + 一次性 prompt。",
-      "must_load_refs": ["triage.md", "output-templates.md"]
+      "expected_behavior": "Triage 流。Schedule Pre-Check 命中：'每周' + 公开网页 + 摘要 + 推送类任务 → 优先推 **AI 工具内置定时任务**（ChatGPT Tasks / 钉钉悟空定时 / 飞书智能伙伴定时 / 豆包定时）。难度 ★★。Operator=我自己 → 推送方式选'在 ChatGPT 对话里展示'即可。Browser Agent 仅作为升级路径（某些源需要登录时）。绝不能首选 Browser Agent + Skill 组合（v8.0 的旧错误）。输出必须用 Scheduled AI Task Sub-template，含定时任务 prompt + 升级信号。",
+      "must_load_refs": ["triage.md", "output-templates.md"],
+      "should_not_trigger": ["Browser Agent + Skill as primary recommendation"]
     },
     {
       "id": 10,
@@ -85,6 +86,47 @@
       "expected_behavior": "Q1 过空（少于 5 个有效词）。不要立刻进 Discovery；按 Triage 的 Ambiguity Handling 规则，再问一次但只一句：'能举一个具体小事吗？比如最近一周你最想让 AI 帮你做的一件事。' 收到回答再继续 Q2/Q3。",
       "must_load_refs": ["triage.md"],
       "expected_special_handling": "ambiguity follow-up, NOT immediate Discovery escalation"
+    },
+    {
+      "id": 11,
+      "tags": ["scheduled-task", "high-freq", "step-0"],
+      "prompt": "我希望 ChatGPT 每天早上 7 点给我推 5 条 AI 行业新闻摘要，工作日推就行。",
+      "expected_behavior": "Schedule Pre-Check 强命中：'每天 / 早上 7 点' + 公开数据 + 摘要 + 推送 + 工具已经指定 (ChatGPT)。一轮搞定，不进完整 Triage 三问。直接出 Scheduled AI Task Sub-template，工具选 ChatGPT Tasks，prompt 含频率/时区/数据源/筛选标准/推送方式。难度 ★★。明确写出'你已经在用 ChatGPT，不用换工具'。",
+      "must_load_refs": ["triage.md", "output-templates.md"],
+      "should_not_trigger": ["Browser Agent recommendation", "Workflow platform recommendation", "full Triage three-question flow"]
+    },
+    {
+      "id": 12,
+      "tags": ["scheduled-task", "escalation-needed"],
+      "prompt": "我希望每天自动登录公司 ERP，把昨天的销售单导出，发到销售群里。",
+      "expected_behavior": "Schedule 关键词命中（每天 + 自动），但任务需要登录 ERP + 操作公司内部系统 + 群发 → 触发 Schedule Overlay 的升级路径。**不能**推 ChatGPT Tasks（登录公司内部系统过不去）。应推 Scheduled Browser Agent 或 Workflow Platform with Schedule + 强人审兜底。同时触发 High-Risk Auto-Escalate（涉及销售数据 + 群发）。最终走 Discovery Mode + Workflow 推荐。",
+      "must_load_refs": ["triage.md", "discovery.md", "decision-tree.md", "output-templates.md"],
+      "expected_escalation": "High-Risk fires due to 销售数据 + 群发; Schedule Overlay says built-in scheduler not enough"
+    },
+    {
+      "id": 13,
+      "tags": ["ai-table", "table-pre-check", "feishu"],
+      "prompt": "我们用飞书多维表格，里面有 500 条客户评论，我想让 AI 自动分类成「投诉 / 咨询 / 表扬 / 建议」四类，方便后续分给不同同事跟进。",
+      "expected_behavior": "Table Pre-Check 强命中：明确提到「飞书多维表格」+ 「自动分类」+ 「500 条 / 每条」典型行级处理。**一轮搞定**，不走完整 Triage 三问。直接出 AI Table Sub-template，工具选飞书多维 AI 字段捷径的「分类」字段；难度 ★★。给出操作步骤：导入 → 新增字段 → 探索字段捷径 → 分类 → 配置 4 个类别 + 2-3 个参考示例 → 生成前 5 行预览 → 应用全部。绝不能推 Skill / Coding Agent / Custom RAG（这些都是过度方案）。",
+      "must_load_refs": ["triage.md", "output-templates.md"],
+      "should_not_trigger": ["Skill recommendation", "Coding Agent recommendation", "Custom RAG recommendation", "full Triage three-question flow"]
+    },
+    {
+      "id": 14,
+      "tags": ["ai-table", "table-pre-check", "dingtalk"],
+      "prompt": "钉钉表格里每条都是客户售后留言，我要 AI 从每条留言里提取出「门店、商品ID、问题类型」三个字段。",
+      "expected_behavior": "Table Pre-Check 强命中：「钉钉表格」+ 「每条 + 提取 + 三个字段」典型 AI 字段提取场景。直接推钉钉 AI 表格的 **AI 字段提取**（模型默认通义千问-plus）。AI Table Sub-template 的「钉钉」部分。给出配置：在 AI 助理工作流里 → 待提取的文本引用留言列 → 要提取的字段填三个固定参数（参数名 + 类型 + 描述）。难度 ★★。",
+      "must_load_refs": ["triage.md", "output-templates.md"],
+      "should_not_trigger": ["Skill recommendation", "Coding Agent recommendation", "Workflow with AI Nodes as primary"]
+    },
+    {
+      "id": 15,
+      "tags": ["ai-table", "anti-rag-misroute", "notion"],
+      "prompt": "我有一份 Notion 数据库，里面 200 条会议记录，希望 AI 自动给每条加一个简短摘要 + 提取 action items。这是不是要搭个 RAG？",
+      "expected_behavior": "用户主动问'是不是要 RAG'，但数据形态明显是「Notion 数据库 + 每行独立处理」→ Table Pre-Check 命中，**应明确告诉用户'不是 RAG'**。推 Notion AI Autofill：Summary 字段 + Custom Autofill 字段（提取 action items）。难度 ★★，5 分钟配完。Anti-Pattern 命中：v8.2 新增的'数据已在表格里推 Custom RAG'反例。RAG 仅作为'如果你的会议记录不在数据库里、分散在 100 份 Word 里'的升级路径提及。",
+      "must_load_refs": ["triage.md", "output-templates.md", "enterprise-knowledge-rag.md"],
+      "should_not_trigger": ["RAG as primary recommendation", "Workflow recommendation"],
+      "expected_special_handling": "Must explicitly correct user's RAG assumption"
     }
   ]
 }
