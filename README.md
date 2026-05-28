@@ -48,17 +48,38 @@
 
 ## 安装
 
-把整个 `ai-solution-router/` 文件夹拷到你常用 AI 工具的 skills 目录：
+### 最简单：直接让 AI 帮你装
 
-| 工具 | 目录 |
-|---|---|
-| Cursor | `~/.cursor/skills/ai-solution-router/` |
-| OpenAI Codex CLI | `~/.codex/skills/ai-solution-router/` |
-| Claude Code | `~/.claude/skills/ai-solution-router/` |
-| ChatGPT 自定义 GPT | `SKILL.md` 全文贴进 Instructions；`references/` 里的 md 上传到 Knowledge |
-| 钉钉悟空 / 飞书智能伙伴 / 自建 Bot | `SKILL.md` 贴系统提示词；`references/` 作为知识库上传 |
+打开你常用的 AI 工具（Cursor / Claude Code / Codex CLI / ChatGPT 都行），把下面这段整段发给它：
 
-> Windows 用 `%USERPROFILE%\.cursor\skills\ai-solution-router\` 等价路径。
+```text
+帮我安装这个 skill：https://github.com/<owner>/ai-solution-router
+
+要求：
+- 拉到本工具默认的 skills 目录（Cursor 是 ~/.cursor/skills/，Codex 是 ~/.codex/skills/，Claude Code 是 ~/.claude/skills/，按你识别到的工具放）
+- 装完后告诉我怎么调用
+```
+
+现在主流 AI 工具都能识别 GitHub URL，自己 clone + 放到正确位置 + 提示触发方式。不用手动复制文件夹。
+
+### 一行命令（power user）
+
+```bash
+git clone https://github.com/<owner>/ai-solution-router.git ~/.cursor/skills/ai-solution-router
+```
+
+Codex / Claude 同理，把目标换成 `~/.codex/skills/` 或 `~/.claude/skills/`。Windows 用 `%USERPROFILE%\.cursor\skills\` 等价路径。
+
+### 用 ChatGPT / 钉钉悟空 / 飞书智能伙伴 / 自建 Bot
+
+这类托管平台没有"本地 skills 目录"，让 AI 帮你做：
+
+```text
+读取 https://github.com/<owner>/ai-solution-router 这个仓库：
+1. 把 SKILL.md 全文贴进我这个 GPT / 智能体的系统提示词
+2. 把 references/ 下面所有 md 上传到 Knowledge / 知识库
+3. agents/openai.yaml 里的 default_prompt 设置成对话开场白
+```
 
 ### 验证装好了
 
