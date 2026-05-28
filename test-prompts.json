@@ -1,0 +1,90 @@
+{
+  "schema_version": "v8",
+  "purpose": "Regression test cases for ai-solution-router. Each case lists a real user prompt and the expected routing behavior. Run after any change to SKILL.md / references/ and verify the router still behaves as expected.",
+  "scoring_guide": {
+    "pass": "Router behaves as described in `expected_behavior` AND uses the templates/refs listed in `must_load_refs`.",
+    "partial": "Route is correct but format / refs are off.",
+    "fail": "Wrong route, wrong mode, or skipped a required step."
+  },
+  "cases": [
+    {
+      "id": 1,
+      "tags": ["triage", "high-frequency", "coding-or-skill"],
+      "prompt": "我每天要把客户在微信群里发的反馈截图整理成表格，分类标注情感（正面/负面/建议），然后发给产品经理。现在全靠手动，太累了。",
+      "expected_behavior": "进入 Triage Mode（首条消息不算完全清晰）。Q1 抽出：高频、输入是截图、输出是表格。Q2/Q3 多选问。最终推荐应在 Skill 或 Coding Agent 之间（取决于是否 OCR）。必须体现单工具偏置 + 难度评估 + 升级降级。",
+      "must_load_refs": ["triage.md", "output-templates.md"],
+      "should_not_trigger": ["High-Risk escalation", "demo-build-branch"]
+    },
+    {
+      "id": 2,
+      "tags": ["knowledge-keyword", "stack-aware", "dingtalk"],
+      "prompt": "我们公司用钉钉，销售团队经常要查内部的产品手册、报价政策、历史案例来回答客户问题。现在每次都是翻文档群找，效率很低。有没有什么AI方案？",
+      "expected_behavior": "Knowledge auto-detect 命中（公司/内部/案例/客户）。Triage 输出附带知识层提示，推荐先用钉钉企业知识搜索（Tier 1）；如果用户后续追问要 Agent，再升级到 Tier 2（钉钉悟空 + 知识库）。绝不在第一轮直接推自定义 RAG。",
+      "must_load_refs": ["triage.md", "enterprise-knowledge-rag.md"],
+      "should_not_trigger": ["custom RAG as first recommendation"]
+    },
+    {
+      "id": 3,
+      "tags": ["coding-agent", "greenfield", "stop-at-handoff"],
+      "prompt": "我想做一个内部工具，让运营同事上传 Excel 数据，AI 自动生成周报，带图表，能导出 PDF。",
+      "expected_behavior": "推 Coding Agent（B. Greenfield Demo）。但 router 应该只产出 handoff prompt 就停，不主动跳进 demo-build 写 PRD/Mock/ACCEPTANCE，除非用户说'继续做完整 demo'。Operator 维度（运营同事，非技术）要触发'要给团队用 → 升级 Bot/UI'的考虑。",
+      "must_load_refs": ["output-templates.md"],
+      "should_not_auto_load": ["demo-build-branch.md", "product-demo-templates.md"]
+    },
+    {
+      "id": 4,
+      "tags": ["chat-only", "one-shot"],
+      "prompt": "帮我把这封邮件改得更专业一点，要发给客户的。原文：'老板说价格再让 5%，搞快点签合同'。",
+      "expected_behavior": "一次性 + 写字场景。但 prompt 出现'客户'+'对外'触发 High-Risk Auto-Escalate（直接回复客户）。模型应该升级到 Discovery 或至少强制加'人工审核'段。最终推 AI Chat 即可，但输出必须有'发出前自己再读一遍'的提示。",
+      "must_load_refs": ["triage.md"],
+      "expected_escalation": "High-Risk fires due to '客户' + '对外'"
+    },
+    {
+      "id": 5,
+      "tags": ["step-0", "not-ai"],
+      "prompt": "我有一张 Excel 表，1000 行客户数据，想按地区分组统计每组的销售额合计和平均值。",
+      "expected_behavior": "触发 Step 0：这是 Excel SUMIF/AVERAGEIF 或数据透视表能做的事，不需要 AI。Router 应该直接推荐 Excel 公式或数据透视表，并附 1 行说明；不要把用户拽进 6 条 AI 路线。如果用户坚持要 AI，再降级到 Chat 数据分析。",
+      "must_load_refs": ["decision-tree.md"],
+      "expected_response_starts_with_one_of": ["这事其实", "建议先用 Excel", "不用 AI"]
+    },
+    {
+      "id": 6,
+      "tags": ["high-risk", "compliance"],
+      "prompt": "我想让 AI 帮我审一下供应商合同，看有没有什么风险条款。",
+      "expected_behavior": "High-Risk Auto-Escalate 立即触发（合同审查 + 法务）。不进 Triage，直接进 Discovery。最终推荐必须强制带'仅做初筛、最终由法务/律师确认'的人审层。绝不能给出'AI 替你审完发出去'的输出。",
+      "must_load_refs": ["triage.md", "discovery.md"],
+      "expected_escalation": "High-Risk fires"
+    },
+    {
+      "id": 7,
+      "tags": ["edge-case-4", "user-tool-preference"],
+      "prompt": "我想用 Dify 搭一个客服自动回复机器人，怎么开始？",
+      "expected_behavior": "触发 Edge Case 4（用户指定工具）。Router 不能直接照办——必须完整跑 discovery，然后在 Route Confirmation 双方案对比：用户偏好的 Dify vs router 自己的推荐（可能是 Workflow with AI Nodes，可能也是 Dify）。如果一致，确认；如果不同，解释为什么。",
+      "must_load_refs": ["discovery.md", "decision-tree.md"],
+      "expected_special_handling": "tool-preference dual presentation"
+    },
+    {
+      "id": 8,
+      "tags": ["in-repo-coding", "light-path"],
+      "prompt": "我们项目有个 bug：用户登录后 cookie 没设对，刷新后退出登录。我想让 AI 帮我修一下。",
+      "expected_behavior": "推 Coding Agent → A. In-Repo Task（轻路径）。Router 应该明确说'这是改已有代码，我走轻路径，不写 PRD/Mock'。产出 In-Repo handoff prompt + 预估影响文件 + 验收命令。绝不能跳进 Greenfield Demo 流程。",
+      "must_load_refs": ["output-templates.md"],
+      "should_not_trigger": ["Greenfield demo", "PRD generation"]
+    },
+    {
+      "id": 9,
+      "tags": ["high-freq", "browser-agent"],
+      "prompt": "我每周要看 20 篇行业新闻，挑出 3 篇做摘要发到团队周报里。",
+      "expected_behavior": "Triage 流。Q2=高频，Q3=网页操作。最终推 Skill + Browser Agent 组合（高频固定流程值得包装成 Skill）。难度 ★★★。Operator=我自己 → 不升级到 Bot。输出含'什么时候该换路线'：登录平台 → Coding；月频 → 降回 Browser Agent + 一次性 prompt。",
+      "must_load_refs": ["triage.md", "output-templates.md"]
+    },
+    {
+      "id": 10,
+      "tags": ["vague-q1", "ambiguity-handling"],
+      "prompt": "我想用 AI 提效。",
+      "expected_behavior": "Q1 过空（少于 5 个有效词）。不要立刻进 Discovery；按 Triage 的 Ambiguity Handling 规则，再问一次但只一句：'能举一个具体小事吗？比如最近一周你最想让 AI 帮你做的一件事。' 收到回答再继续 Q2/Q3。",
+      "must_load_refs": ["triage.md"],
+      "expected_special_handling": "ambiguity follow-up, NOT immediate Discovery escalation"
+    }
+  ]
+}

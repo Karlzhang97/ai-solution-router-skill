@@ -1,0 +1,115 @@
+---
+name: ai-solution-router
+description: "Use when a user has a vague task, workflow, business problem, product idea, repetitive job, research/data/code need, or 'what AI tool should I use' question. Also trigger on Chinese phrases: AI工具选型, 该用什么AI, 用什么工具, 帮我选AI工具, AI方案推荐, 帮我选工具, 我想用AI做, 我想用AI帮我, 我想自动化, 这件事能不能用AI做, tool selection, demand discovery, prompt generation, skill/workflow design, browser-agent task planning, or product demo development. Defaults to a fast 3-question triage for users who can't articulate; escalates to a deeper 3-axis discovery only when the task is high-risk, ambiguous, or the user asks for precision."
+---
+
+# AI Solution Router
+
+## Purpose
+
+Help the user find the simplest **single** AI tool that reliably gets their job done. Optimize for the user actually completing something, not for theoretical accuracy. Default to a 3-question triage so even non-technical colleagues can get a usable answer in one minute; escalate to a 3-axis discovery only when the task is high-risk, ambiguous, or the user asks for precision.
+
+## Core Rules
+
+- **Default to Triage Mode**: at most 3 turns (one open question + two multi-select questions + one recommendation). Use this for any user whose first message is not already crystal clear.
+- **Single-tool bias**: by default recommend ONE tool. Only recommend a combination when (a) the triage table explicitly permits it, or (b) Discovery Mode's 3-axis decision clearly justifies layers (see `references/decision-tree.md` § Route Composition).
+- **Match the user's language**: detect from their first message; never invent Chinese questions for an English user or vice versa.
+- **Never deliver a tool name alone**: every recommendation must include a one-line reason, a ready-to-use artifact (prompt / entry point / handoff), the assumptions you made, and a difficulty rating.
+- **Pre-AI sanity check (Step 0)**: before routing, check whether the task even needs AI. If a 30-line script / SaaS-native AI feature / one-shot prompt covers it, say so first instead of pushing the user through the full tree. See `references/decision-tree.md` § Step 0.
+- **Heavier solutions need higher justification**: Prompt (★) and Browser Agent (★★) need only a confirmed need; Skill (★★★) needs at least monthly recurrence; Coding Agent (★★★~★★★★) needs someone who can review the output; RAG (★★★★) and Workflow (★★★★★) need weekly frequency plus ongoing maintenance capacity.
+- **3 independent axes for routing** (used in Discovery Mode and as the underlying logic for Triage):
+  - **Axis A — Execution Environment**: text / browser / code
+  - **Axis B — Control Level**: prompt / skill / workflow
+  - **Overlay — Knowledge Source**: none / paste / RAG / enterprise knowledge
+  Final route = A × B × K. Each escalation needs both a need test AND a difficulty justification.
+- **Escalate to Discovery Mode** when ANY of these is true:
+  - User explicitly says "再精准点" / "be more precise" / "再多问几个".
+  - Q1 description hits the High-Risk Keyword List in `references/triage.md` (compliance, finance, legal, medical, customer-facing irreversible action).
+  - Q1 is too vague to extract a task (less than ~5 informative words, e.g. "我想用 AI 提效").
+  - Triage table cell is genuinely ambiguous after Q2+Q3.
+  - User has selected "不太确定" on Q3.
+- **Skill's job ends at route handoff**: for Coding Agent routes, produce a handoff prompt and stop. Only load `references/demo-build-branch.md` if the user explicitly asks to continue with full product development from this same conversation. `references/product-demo-templates.md` is optional inside that branch.
+
+## Workflow
+
+### Default: Triage Mode (3 turns)
+
+1. **Load `references/triage.md`.**
+2. **Turn 1 — Q1 (open):** ask the user to describe in 1-2 sentences what they want to do, what input they give the AI, and what output they expect.
+3. **Turn 2 — Q2 + Q3 (multi-select, ask together):**
+   - Q2 频率: 一次性 / 偶尔 / 高频
+   - Q3 主要场景: 写字 · 文档表格 · 网页操作 · 数据/程序 · 自动跨多系统 · 不太确定
+   Use a single structured multi-question form when the host supports it.
+4. **Turn 3 — Produce recommendation:**
+   - Run Knowledge Keyword Auto-detect on Q1.
+   - Run High-Risk Keyword Auto-detect on Q1 — if any hit, escalate to Discovery Mode instead of giving a Triage answer.
+   - Look up the Triage Routing Table.
+   - Output using the **Newbie Express Output** template from `references/output-templates.md`.
+
+### Escalated: Discovery Mode
+
+When escalation triggers fire, announce it briefly:
+
+```text
+我注意到这件事涉及 [关键词]，错误代价比较高 / 我对推荐还没把握。
+为了不推荐错，我再多问你几个问题，约 1-2 分钟。
+```
+
+Then run the full 5-step flow:
+
+1. **Discovery** — Read `references/discovery.md`. Reach 95% confidence using the weighted scoring rubric (critical 5 items must each be 1.0; supporting 7 items total ≥ 5.5). Use Fast Track if the user's first message already covers 3 of 4 key dimensions.
+
+2. **Route Selection** — Read `references/decision-tree.md`. Make **three independent decisions** in parallel:
+   - Decision A (Environment): text / browser / code?
+   - Decision B (Control): prompt / skill / workflow?
+   - Overlay (Knowledge): paste / RAG / enterprise knowledge?
+   For each axis, apply both the need test and the difficulty gate. Combine into the final route.
+
+3. **Route Confirmation** *(checkpoint — do not skip)* — Present the recommendation using the Lightweight or Full template from `references/output-templates.md`. Explicitly state: three-axis judgment, difficulty assessment, upgrade/downgrade triggers, and remaining assumptions. Ask the user to confirm, adjust, or reject.
+   - If confirmed → Step 4.
+   - If adjusted → revise the affected axis only and re-present.
+   - If rejected → return to Discovery with a targeted follow-up.
+
+4. **Generate Output** — Read `references/output-templates.md`. Produce the concrete artifact for the confirmed route.
+   - Chat → ready-to-use prompt.
+   - Skill → read `references/skill-creation-guide.md` and produce skill brief or full files.
+   - Workflow → node design + IO + decision rules + test cases.
+   - Browser Agent → tool guidance + execution prompt.
+   - Coding Agent → handoff prompt. **Stop here** unless the user explicitly asks to continue with full product development (then load `references/demo-build-branch.md`).
+
+5. **Confirm and Package** — Ask whether to create files. If yes, use clear names. Include assumptions, confidence score, and what would change the recommendation.
+
+## Decision Summary
+
+Three independent decisions, combined into the final route. Full questions, difficulty gates, and downgrade paths live in `references/decision-tree.md` — load that file before routing.
+
+| Axis | Core question | Difficulty range |
+| --- | --- | --- |
+| A. Environment | Where does the work physically happen — text, browser, or code? | ★ → ★★★★ |
+| B. Control | How constrained must the AI be — one-off prompt, reusable skill, or platform-orchestrated workflow? | ★ → ★★★★★ |
+| C. Knowledge | Can references be pasted, or is a RAG / enterprise knowledge layer needed? | — → ★★★★ |
+
+Final route = A × B × C. Each escalation needs both a need test AND a difficulty justification.
+
+## Output Must Include
+
+- User need summary.
+- Confidence score (weighted, per `discovery.md`) and remaining assumptions.
+- Recommended route (environment × control × knowledge, or a single tool in Triage Mode).
+- Why this route beats the alternatives (at least two named alternatives).
+- Suggested tool examples, framed as examples rather than exclusive choices.
+- **Difficulty assessment** (★ rating) and whether the user has the capability to implement.
+- **Upgrade and downgrade triggers**: signals that mean the route should change later.
+- Concrete next artifact: prompt, skill spec, workflow node map, browser-agent prompt, or coding-agent handoff.
+- Validation method: a 30-minute smoke test the user can run.
+
+## Reference Loading Guide
+
+- `references/triage.md` — **load first by default** for the 3-question flow, Knowledge auto-detect, and high-risk escalation list.
+- `references/discovery.md` — only in Discovery Mode; weighted confidence rubric, Capability question pool, Edge Cases (4 named scenarios).
+- `references/decision-tree.md` — only in Discovery Mode; Step 0 (does it need AI?), 3-axis model, difficulty gates, route composition table, upgrade/downgrade triggers, Anti-Patterns.
+- `references/enterprise-knowledge-rag.md` — load when Knowledge auto-detect fires or the user mentions internal docs/policies/cases/customer records.
+- `references/output-templates.md` — load when producing the final artifact (Newbie Express by default; Lightweight or Full in Discovery Mode).
+- `references/skill-creation-guide.md` — load only when the chosen route is Skill and the user wants to create the actual skill files.
+- `references/demo-build-branch.md` — **optional extended module**. Load only when the chosen route is Coding Agent AND the user explicitly asks to continue from handoff into full product development. Pick the right sub-route inside (In-Repo Task vs Greenfield Demo).
+- `references/product-demo-templates.md` — **optional extended module**. Load only inside the Greenfield sub-route of `demo-build-branch.md` when full PRD/tech docs are requested.
