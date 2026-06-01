@@ -1,132 +1,452 @@
-{
-  "schema_version": "v8.2",
-  "purpose": "Regression test cases for ai-solution-router. Each case lists a real user prompt and the expected routing behavior. Run after any change to SKILL.md / references/ and verify the router still behaves as expected.",
-  "scoring_guide": {
-    "pass": "Router behaves as described in `expected_behavior` AND uses the templates/refs listed in `must_load_refs`.",
-    "partial": "Route is correct but format / refs are off.",
-    "fail": "Wrong route, wrong mode, or skipped a required step."
-  },
-  "cases": [
-    {
-      "id": 1,
-      "tags": ["triage", "high-frequency", "coding-or-skill"],
-      "prompt": "我每天要把客户在微信群里发的反馈截图整理成表格，分类标注情感（正面/负面/建议），然后发给产品经理。现在全靠手动，太累了。",
-      "expected_behavior": "进入 Triage Mode（首条消息不算完全清晰）。Q1 抽出：高频、输入是截图、输出是表格。Q2/Q3 多选问。最终推荐应在 Skill 或 Coding Agent 之间（取决于是否 OCR）。必须体现单工具偏置 + 难度评估 + 升级降级。",
-      "must_load_refs": ["triage.md", "output-templates.md"],
-      "should_not_trigger": ["High-Risk escalation", "demo-build-branch"]
-    },
-    {
-      "id": 2,
-      "tags": ["knowledge-keyword", "stack-aware", "dingtalk"],
-      "prompt": "我们公司用钉钉，销售团队经常要查内部的产品手册、报价政策、历史案例来回答客户问题。现在每次都是翻文档群找，效率很低。有没有什么AI方案？",
-      "expected_behavior": "Knowledge auto-detect 命中（公司/内部/案例/客户）。Triage 输出附带知识层提示，推荐先用钉钉企业知识搜索（Tier 1）；如果用户后续追问要 Agent，再升级到 Tier 2（钉钉悟空 + 知识库）。绝不在第一轮直接推自定义 RAG。",
-      "must_load_refs": ["triage.md", "enterprise-knowledge-rag.md"],
-      "should_not_trigger": ["custom RAG as first recommendation"]
-    },
-    {
-      "id": 3,
-      "tags": ["coding-agent", "greenfield", "stop-at-handoff"],
-      "prompt": "我想做一个内部工具，让运营同事上传 Excel 数据，AI 自动生成周报，带图表，能导出 PDF。",
-      "expected_behavior": "推 Coding Agent（B. Greenfield Demo）。但 router 应该只产出 handoff prompt 就停，不主动跳进 demo-build 写 PRD/Mock/ACCEPTANCE，除非用户说'继续做完整 demo'。Operator 维度（运营同事，非技术）要触发'要给团队用 → 升级 Bot/UI'的考虑。",
-      "must_load_refs": ["output-templates.md"],
-      "should_not_auto_load": ["demo-build-branch.md", "product-demo-templates.md"]
-    },
-    {
-      "id": 4,
-      "tags": ["chat-only", "one-shot"],
-      "prompt": "帮我把这封邮件改得更专业一点，要发给客户的。原文：'老板说价格再让 5%，搞快点签合同'。",
-      "expected_behavior": "一次性 + 写字场景。但 prompt 出现'客户'+'对外'触发 High-Risk Auto-Escalate（直接回复客户）。模型应该升级到 Discovery 或至少强制加'人工审核'段。最终推 AI Chat 即可，但输出必须有'发出前自己再读一遍'的提示。",
-      "must_load_refs": ["triage.md"],
-      "expected_escalation": "High-Risk fires due to '客户' + '对外'"
-    },
-    {
-      "id": 5,
-      "tags": ["step-0", "not-ai"],
-      "prompt": "我有一张 Excel 表，1000 行客户数据，想按地区分组统计每组的销售额合计和平均值。",
-      "expected_behavior": "触发 Step 0：这是 Excel SUMIF/AVERAGEIF 或数据透视表能做的事，不需要 AI。Router 应该直接推荐 Excel 公式或数据透视表，并附 1 行说明；不要把用户拽进 6 条 AI 路线。如果用户坚持要 AI，再降级到 Chat 数据分析。",
-      "must_load_refs": ["decision-tree.md"],
-      "expected_response_starts_with_one_of": ["这事其实", "建议先用 Excel", "不用 AI"]
-    },
-    {
-      "id": 6,
-      "tags": ["high-risk", "compliance"],
-      "prompt": "我想让 AI 帮我审一下供应商合同，看有没有什么风险条款。",
-      "expected_behavior": "High-Risk Auto-Escalate 立即触发（合同审查 + 法务）。不进 Triage，直接进 Discovery。最终推荐必须强制带'仅做初筛、最终由法务/律师确认'的人审层。绝不能给出'AI 替你审完发出去'的输出。",
-      "must_load_refs": ["triage.md", "discovery.md"],
-      "expected_escalation": "High-Risk fires"
-    },
-    {
-      "id": 7,
-      "tags": ["edge-case-4", "user-tool-preference"],
-      "prompt": "我想用 Dify 搭一个客服自动回复机器人，怎么开始？",
-      "expected_behavior": "触发 Edge Case 4（用户指定工具）。Router 不能直接照办——必须完整跑 discovery，然后在 Route Confirmation 双方案对比：用户偏好的 Dify vs router 自己的推荐（可能是 Workflow with AI Nodes，可能也是 Dify）。如果一致，确认；如果不同，解释为什么。",
-      "must_load_refs": ["discovery.md", "decision-tree.md"],
-      "expected_special_handling": "tool-preference dual presentation"
-    },
-    {
-      "id": 8,
-      "tags": ["in-repo-coding", "light-path"],
-      "prompt": "我们项目有个 bug：用户登录后 cookie 没设对，刷新后退出登录。我想让 AI 帮我修一下。",
-      "expected_behavior": "推 Coding Agent → A. In-Repo Task（轻路径）。Router 应该明确说'这是改已有代码，我走轻路径，不写 PRD/Mock'。产出 In-Repo handoff prompt + 预估影响文件 + 验收命令。绝不能跳进 Greenfield Demo 流程。",
-      "must_load_refs": ["output-templates.md"],
-      "should_not_trigger": ["Greenfield demo", "PRD generation"]
-    },
-    {
-      "id": 9,
-      "tags": ["high-freq", "scheduled-task", "schedule-pre-check"],
-      "prompt": "我每周要看 20 篇行业新闻，挑出 3 篇做摘要发到团队周报里。",
-      "expected_behavior": "Triage 流。Schedule Pre-Check 命中：'每周' + 公开网页 + 摘要 + 推送类任务 → 优先推 **AI 工具内置定时任务**（ChatGPT Tasks / 钉钉悟空定时 / 飞书智能伙伴定时 / 豆包定时）。难度 ★★。Operator=我自己 → 推送方式选'在 ChatGPT 对话里展示'即可。Browser Agent 仅作为升级路径（某些源需要登录时）。绝不能首选 Browser Agent + Skill 组合（v8.0 的旧错误）。输出必须用 Scheduled AI Task Sub-template，含定时任务 prompt + 升级信号。",
-      "must_load_refs": ["triage.md", "output-templates.md"],
-      "should_not_trigger": ["Browser Agent + Skill as primary recommendation"]
-    },
-    {
-      "id": 10,
-      "tags": ["vague-q1", "ambiguity-handling"],
-      "prompt": "我想用 AI 提效。",
-      "expected_behavior": "Q1 过空（少于 5 个有效词）。不要立刻进 Discovery；按 Triage 的 Ambiguity Handling 规则，再问一次但只一句：'能举一个具体小事吗？比如最近一周你最想让 AI 帮你做的一件事。' 收到回答再继续 Q2/Q3。",
-      "must_load_refs": ["triage.md"],
-      "expected_special_handling": "ambiguity follow-up, NOT immediate Discovery escalation"
-    },
-    {
-      "id": 11,
-      "tags": ["scheduled-task", "high-freq", "step-0"],
-      "prompt": "我希望 ChatGPT 每天早上 7 点给我推 5 条 AI 行业新闻摘要，工作日推就行。",
-      "expected_behavior": "Schedule Pre-Check 强命中：'每天 / 早上 7 点' + 公开数据 + 摘要 + 推送 + 工具已经指定 (ChatGPT)。一轮搞定，不进完整 Triage 三问。直接出 Scheduled AI Task Sub-template，工具选 ChatGPT Tasks，prompt 含频率/时区/数据源/筛选标准/推送方式。难度 ★★。明确写出'你已经在用 ChatGPT，不用换工具'。",
-      "must_load_refs": ["triage.md", "output-templates.md"],
-      "should_not_trigger": ["Browser Agent recommendation", "Workflow platform recommendation", "full Triage three-question flow"]
-    },
-    {
-      "id": 12,
-      "tags": ["scheduled-task", "escalation-needed"],
-      "prompt": "我希望每天自动登录公司 ERP，把昨天的销售单导出，发到销售群里。",
-      "expected_behavior": "Schedule 关键词命中（每天 + 自动），但任务需要登录 ERP + 操作公司内部系统 + 群发 → 触发 Schedule Overlay 的升级路径。**不能**推 ChatGPT Tasks（登录公司内部系统过不去）。应推 Scheduled Browser Agent 或 Workflow Platform with Schedule + 强人审兜底。同时触发 High-Risk Auto-Escalate（涉及销售数据 + 群发）。最终走 Discovery Mode + Workflow 推荐。",
-      "must_load_refs": ["triage.md", "discovery.md", "decision-tree.md", "output-templates.md"],
-      "expected_escalation": "High-Risk fires due to 销售数据 + 群发; Schedule Overlay says built-in scheduler not enough"
-    },
-    {
-      "id": 13,
-      "tags": ["ai-table", "table-pre-check", "feishu"],
-      "prompt": "我们用飞书多维表格，里面有 500 条客户评论，我想让 AI 自动分类成「投诉 / 咨询 / 表扬 / 建议」四类，方便后续分给不同同事跟进。",
-      "expected_behavior": "Table Pre-Check 强命中：明确提到「飞书多维表格」+ 「自动分类」+ 「500 条 / 每条」典型行级处理。**一轮搞定**，不走完整 Triage 三问。直接出 AI Table Sub-template，工具选飞书多维 AI 字段捷径的「分类」字段；难度 ★★。给出操作步骤：导入 → 新增字段 → 探索字段捷径 → 分类 → 配置 4 个类别 + 2-3 个参考示例 → 生成前 5 行预览 → 应用全部。绝不能推 Skill / Coding Agent / Custom RAG（这些都是过度方案）。",
-      "must_load_refs": ["triage.md", "output-templates.md"],
-      "should_not_trigger": ["Skill recommendation", "Coding Agent recommendation", "Custom RAG recommendation", "full Triage three-question flow"]
-    },
-    {
-      "id": 14,
-      "tags": ["ai-table", "table-pre-check", "dingtalk"],
-      "prompt": "钉钉表格里每条都是客户售后留言，我要 AI 从每条留言里提取出「门店、商品ID、问题类型」三个字段。",
-      "expected_behavior": "Table Pre-Check 强命中：「钉钉表格」+ 「每条 + 提取 + 三个字段」典型 AI 字段提取场景。直接推钉钉 AI 表格的 **AI 字段提取**（模型默认通义千问-plus）。AI Table Sub-template 的「钉钉」部分。给出配置：在 AI 助理工作流里 → 待提取的文本引用留言列 → 要提取的字段填三个固定参数（参数名 + 类型 + 描述）。难度 ★★。",
-      "must_load_refs": ["triage.md", "output-templates.md"],
-      "should_not_trigger": ["Skill recommendation", "Coding Agent recommendation", "Workflow with AI Nodes as primary"]
-    },
-    {
-      "id": 15,
-      "tags": ["ai-table", "anti-rag-misroute", "notion"],
-      "prompt": "我有一份 Notion 数据库，里面 200 条会议记录，希望 AI 自动给每条加一个简短摘要 + 提取 action items。这是不是要搭个 RAG？",
-      "expected_behavior": "用户主动问'是不是要 RAG'，但数据形态明显是「Notion 数据库 + 每行独立处理」→ Table Pre-Check 命中，**应明确告诉用户'不是 RAG'**。推 Notion AI Autofill：Summary 字段 + Custom Autofill 字段（提取 action items）。难度 ★★，5 分钟配完。Anti-Pattern 命中：v8.2 新增的'数据已在表格里推 Custom RAG'反例。RAG 仅作为'如果你的会议记录不在数据库里、分散在 100 份 Word 里'的升级路径提及。",
-      "must_load_refs": ["triage.md", "output-templates.md", "enterprise-knowledge-rag.md"],
-      "should_not_trigger": ["RAG as primary recommendation", "Workflow recommendation"],
-      "expected_special_handling": "Must explicitly correct user's RAG assumption"
-    }
-  ]
+﻿{
+    "schema_version":  "v8.3",
+    "purpose":  "Regression test cases for ai-solution-router. Each case lists a real user prompt and the expected routing behavior. Run after any change to SKILL.md / references/ and verify the router still behaves as expected.",
+    "scoring_guide":  {
+                          "pass":  "Router behaves as described in `expected_behavior` AND uses the templates/refs listed in `must_load_refs`.",
+                          "partial":  "Route is correct but format / refs are off.",
+                          "fail":  "Wrong route, wrong mode, or skipped a required step.",
+                          "machine_check":  "For semi-automated checks, verify expected_mode, expected_primary_route, must_include, and must_not_include before reading expected_behavior manually."
+                      },
+    "cases":  [
+                  {
+                      "id":  1,
+                      "tags":  [
+                                   "triage",
+                                   "high-frequency",
+                                   "coding-or-skill"
+                               ],
+                      "prompt":  "我每天要把客户在微信群里发的反馈截图整理成表格，分类标注情感（正面/负面/建议），然后发给产品经理。现在全靠手动，太累了。",
+                      "expected_behavior":  "进入 Triage Mode（首条消息不算完全清晰）。Q1 抽出：高频、输入是截图、输出是表格。Q2/Q3 多选问。最终推荐应在 Skill 或 Coding Agent 之间（取决于是否 OCR）。必须体现单工具偏置 + 难度评估 + 升级降级。",
+                      "must_load_refs":  [
+                                             "triage.md",
+                                             "output-templates.md"
+                                         ],
+                      "should_not_trigger":  [
+                                                 "High-Risk escalation",
+                                                 "demo-build-branch"
+                                             ],
+                      "expected_mode":  "triage",
+                      "must_not_include":  [
+                                               "demo-build-branch"
+                                           ],
+                      "expected_primary_route":  "Skill or Coding Agent",
+                      "must_include":  [
+                                           "Skill",
+                                           "Coding Agent",
+                                           "难度"
+                                       ]
+                  },
+                  {
+                      "id":  2,
+                      "tags":  [
+                                   "knowledge-keyword",
+                                   "stack-aware",
+                                   "dingtalk"
+                               ],
+                      "prompt":  "我们公司用钉钉，销售团队经常要查内部的产品手册、报价政策、历史案例来回答客户问题。现在每次都是翻文档群找，效率很低。有没有什么AI方案？",
+                      "expected_behavior":  "Knowledge auto-detect 命中（公司/内部/案例/客户）。Triage 输出附带知识层提示，推荐先用钉钉企业知识搜索（Tier 1）；如果用户后续追问要 Agent，再升级到 Tier 2（钉钉悟空 + 知识库）。绝不在第一轮直接推自定义 RAG。",
+                      "must_load_refs":  [
+                                             "triage.md",
+                                             "enterprise-knowledge-rag.md"
+                                         ],
+                      "should_not_trigger":  [
+                                                 "custom RAG as first recommendation"
+                                             ],
+                      "expected_mode":  "triage",
+                      "must_not_include":  [
+                                               "自定义 RAG"
+                                           ],
+                      "expected_primary_route":  "Enterprise Knowledge Search",
+                      "must_include":  [
+                                           "钉钉",
+                                           "企业知识",
+                                           "RAG"
+                                       ]
+                  },
+                  {
+                      "id":  3,
+                      "tags":  [
+                                   "coding-agent",
+                                   "greenfield",
+                                   "stop-at-handoff"
+                               ],
+                      "prompt":  "我想做一个内部工具，让运营同事上传 Excel 数据，AI 自动生成周报，带图表，能导出 PDF。",
+                      "expected_behavior":  "推 Coding Agent（B. Greenfield Demo）。但 router 应该只产出 handoff prompt 就停，不主动跳进 demo-build 写 PRD/Mock/ACCEPTANCE，除非用户说\u0027继续做完整 demo\u0027。Operator 维度（运营同事，非技术）要触发\u0027要给团队用 → 升级 Bot/UI\u0027的考虑。",
+                      "must_load_refs":  [
+                                             "output-templates.md"
+                                         ],
+                      "should_not_auto_load":  [
+                                                   "demo-build-branch.md",
+                                                   "product-demo-templates.md"
+                                               ],
+                      "expected_mode":  "handoff",
+                      "must_not_include":  [
+                                               "PRD",
+                                               "Mock",
+                                               "ACCEPTANCE"
+                                           ],
+                      "expected_primary_route":  "Coding Agent Greenfield Demo",
+                      "must_include":  [
+                                           "Coding Agent",
+                                           "handoff prompt",
+                                           "运营同事"
+                                       ]
+                  },
+                  {
+                      "id":  4,
+                      "tags":  [
+                                   "chat-only",
+                                   "one-shot"
+                               ],
+                      "prompt":  "帮我把这封邮件改得更专业一点，要发给客户的。原文：\u0027老板说价格再让 5%，搞快点签合同\u0027。",
+                      "expected_behavior":  "一次性 + 写字场景。但 prompt 出现\u0027客户\u0027+\u0027对外\u0027触发 High-Risk Auto-Escalate（直接回复客户）。模型应该升级到 Discovery 或至少强制加\u0027人工审核\u0027段。最终推 AI Chat 即可，但输出必须有\u0027发出前自己再读一遍\u0027的提示。",
+                      "must_load_refs":  [
+                                             "triage.md"
+                                         ],
+                      "expected_escalation":  "High-Risk fires due to \u0027客户\u0027 + \u0027对外\u0027",
+                      "expected_mode":  "high_risk_discovery",
+                      "must_not_include":  [
+                                               "自动发出"
+                                           ],
+                      "expected_primary_route":  "AI Chat with human review",
+                      "must_include":  [
+                                           "AI Chat",
+                                           "人工审核",
+                                           "客户"
+                                       ]
+                  },
+                  {
+                      "id":  5,
+                      "tags":  [
+                                   "step-0",
+                                   "not-ai"
+                               ],
+                      "prompt":  "我有一张 Excel 表，1000 行客户数据，想按地区分组统计每组的销售额合计和平均值。",
+                      "expected_behavior":  "触发 Step 0：这是 Excel SUMIF/AVERAGEIF 或数据透视表能做的事，不需要 AI。Router 应该直接推荐 Excel 公式或数据透视表，并附 1 行说明；不要把用户拽进 6 条 AI 路线。如果用户坚持要 AI，再降级到 Chat 数据分析。",
+                      "must_load_refs":  [
+                                             "decision-tree.md"
+                                         ],
+                      "expected_response_starts_with_one_of":  [
+                                                                   "这事其实",
+                                                                   "建议先用 Excel",
+                                                                   "不用 AI"
+                                                               ],
+                      "expected_mode":  "step_0_no_ai",
+                      "must_not_include":  [
+                                               "Workflow",
+                                               "Coding Agent"
+                                           ],
+                      "expected_primary_route":  "Excel formula or pivot table",
+                      "must_include":  [
+                                           "Excel",
+                                           "数据透视表"
+                                       ]
+                  },
+                  {
+                      "id":  6,
+                      "tags":  [
+                                   "high-risk",
+                                   "compliance"
+                               ],
+                      "prompt":  "我想让 AI 帮我审一下供应商合同，看有没有什么风险条款。",
+                      "expected_behavior":  "High-Risk Auto-Escalate 立即触发（合同审查 + 法务）。不进 Triage，直接进 Discovery。最终推荐必须强制带\u0027仅做初筛、最终由法务/律师确认\u0027的人审层。绝不能给出\u0027AI 替你审完发出去\u0027的输出。",
+                      "must_load_refs":  [
+                                             "triage.md",
+                                             "discovery.md"
+                                         ],
+                      "expected_escalation":  "High-Risk fires",
+                      "expected_mode":  "high_risk_discovery",
+                      "must_not_include":  [
+                                               "替你审完"
+                                           ],
+                      "expected_primary_route":  "Contract review triage with legal human review",
+                      "must_include":  [
+                                           "合同",
+                                           "法务",
+                                           "人工确认"
+                                       ]
+                  },
+                  {
+                      "id":  7,
+                      "tags":  [
+                                   "edge-case-4",
+                                   "user-tool-preference"
+                               ],
+                      "prompt":  "我想用 Dify 搭一个客服自动回复机器人，怎么开始？",
+                      "expected_behavior":  "触发 Edge Case 4（用户指定工具）。Router 不能直接照办——必须完整跑 discovery，然后在 Route Confirmation 双方案对比：用户偏好的 Dify vs router 自己的推荐（可能是 Workflow with AI Nodes，可能也是 Dify）。如果一致，确认；如果不同，解释为什么。",
+                      "must_load_refs":  [
+                                             "discovery.md",
+                                             "decision-tree.md"
+                                         ],
+                      "expected_special_handling":  "tool-preference dual presentation",
+                      "expected_mode":  "discovery_tool_preference",
+                      "must_not_include":  [
+                                               "直接照办"
+                                           ],
+                      "expected_primary_route":  "Tool preference comparison",
+                      "must_include":  [
+                                           "Dify",
+                                           "对比",
+                                           "确认"
+                                       ]
+                  },
+                  {
+                      "id":  8,
+                      "tags":  [
+                                   "in-repo-coding",
+                                   "light-path"
+                               ],
+                      "prompt":  "我们项目有个 bug：用户登录后 cookie 没设对，刷新后退出登录。我想让 AI 帮我修一下。",
+                      "expected_behavior":  "推 Coding Agent → A. In-Repo Task（轻路径）。Router 应该明确说\u0027这是改已有代码，我走轻路径，不写 PRD/Mock\u0027。产出 In-Repo handoff prompt + 预估影响文件 + 验收命令。绝不能跳进 Greenfield Demo 流程。",
+                      "must_load_refs":  [
+                                             "output-templates.md"
+                                         ],
+                      "should_not_trigger":  [
+                                                 "Greenfield demo",
+                                                 "PRD generation"
+                                             ],
+                      "expected_mode":  "handoff",
+                      "must_not_include":  [
+                                               "Greenfield Demo",
+                                               "PRD"
+                                           ],
+                      "expected_primary_route":  "Coding Agent In-Repo Task",
+                      "must_include":  [
+                                           "Coding Agent",
+                                           "已有项目",
+                                           "验收命令"
+                                       ]
+                  },
+                  {
+                      "id":  9,
+                      "tags":  [
+                                   "high-freq",
+                                   "scheduled-task",
+                                   "schedule-pre-check"
+                               ],
+                      "prompt":  "我每周要看 20 篇行业新闻，挑出 3 篇做摘要发到团队周报里。",
+                      "expected_behavior":  "Triage 流。Schedule Pre-Check 命中：\u0027每周\u0027 + 公开网页 + 摘要 + 推送类任务 → 优先推 **AI 工具内置定时任务**（ChatGPT Tasks / 钉钉悟空定时 / 飞书智能伙伴定时 / 豆包定时）。难度 ★★。Operator=我自己 → 推送方式选\u0027在 ChatGPT 对话里展示\u0027即可。Browser Agent 仅作为升级路径（某些源需要登录时）。绝不能首选 Browser Agent + Skill 组合（v8.0 的旧错误）。输出必须用 Scheduled AI Task Sub-template，含定时任务 prompt + 升级信号。",
+                      "must_load_refs":  [
+                                             "triage.md",
+                                             "output-templates.md"
+                                         ],
+                      "should_not_trigger":  [
+                                                 "Browser Agent + Skill as primary recommendation"
+                                             ],
+                      "expected_mode":  "triage_schedule_overlay",
+                      "must_not_include":  [
+                                               "Browser Agent + Skill"
+                                           ],
+                      "expected_primary_route":  "Scheduled AI Task",
+                      "must_include":  [
+                                           "AI 工具内置定时任务",
+                                           "ChatGPT Tasks",
+                                           "难度 ★★"
+                                       ]
+                  },
+                  {
+                      "id":  10,
+                      "tags":  [
+                                   "vague-q1",
+                                   "ambiguity-handling"
+                               ],
+                      "prompt":  "我想用 AI 提效。",
+                      "expected_behavior":  "Q1 过空（少于 5 个有效词）。不要立刻进 Discovery；按 Triage 的 Ambiguity Handling 规则，再问一次但只一句：\u0027能举一个具体小事吗？比如最近一周你最想让 AI 帮你做的一件事。\u0027 收到回答再继续 Q2/Q3。",
+                      "must_load_refs":  [
+                                             "triage.md"
+                                         ],
+                      "expected_special_handling":  "ambiguity follow-up, NOT immediate Discovery escalation",
+                      "expected_mode":  "ambiguity_followup",
+                      "must_not_include":  [
+                                               "Discovery Mode"
+                                           ],
+                      "expected_primary_route":  "Ask one concrete-example question",
+                      "must_include":  [
+                                           "具体小事"
+                                       ]
+                  },
+                  {
+                      "id":  11,
+                      "tags":  [
+                                   "scheduled-task",
+                                   "high-freq",
+                                   "step-0"
+                               ],
+                      "prompt":  "我希望 ChatGPT 每天早上 7 点给我推 5 条 AI 行业新闻摘要，工作日推就行。",
+                      "expected_behavior":  "Schedule Pre-Check 强命中：\u0027每天 / 早上 7 点\u0027 + 公开数据 + 摘要 + 推送 + 工具已经指定 (ChatGPT)。一轮搞定，不进完整 Triage 三问。直接出 Scheduled AI Task Sub-template，工具选 ChatGPT Tasks，prompt 含频率/时区/数据源/筛选标准/推送方式。难度 ★★。明确写出\u0027你已经在用 ChatGPT，不用换工具\u0027。",
+                      "must_load_refs":  [
+                                             "triage.md",
+                                             "output-templates.md"
+                                         ],
+                      "should_not_trigger":  [
+                                                 "Browser Agent recommendation",
+                                                 "Workflow platform recommendation",
+                                                 "full Triage three-question flow"
+                                             ],
+                      "expected_mode":  "fast_path_schedule_overlay",
+                      "must_not_include":  [
+                                               "Browser Agent",
+                                               "Workflow"
+                                           ],
+                      "expected_primary_route":  "ChatGPT Tasks",
+                      "must_include":  [
+                                           "ChatGPT Tasks",
+                                           "每天",
+                                           "时区"
+                                       ]
+                  },
+                  {
+                      "id":  12,
+                      "tags":  [
+                                   "scheduled-task",
+                                   "escalation-needed"
+                               ],
+                      "prompt":  "我希望每天自动登录公司 ERP，把昨天的销售单导出，发到销售群里。",
+                      "expected_behavior":  "Schedule 关键词命中（每天 + 自动），但任务需要登录 ERP + 操作公司内部系统 + 群发 → 触发 Schedule Overlay 的升级路径。**不能**推 ChatGPT Tasks（登录公司内部系统过不去）。应推 Scheduled Browser Agent 或 Workflow Platform with Schedule + 强人审兜底。同时触发 High-Risk Auto-Escalate（涉及销售数据 + 群发）。最终走 Discovery Mode + Workflow 推荐。",
+                      "must_load_refs":  [
+                                             "triage.md",
+                                             "discovery.md",
+                                             "decision-tree.md",
+                                             "output-templates.md"
+                                         ],
+                      "expected_escalation":  "High-Risk fires due to 销售数据 + 群发; Schedule Overlay says built-in scheduler not enough",
+                      "expected_mode":  "high_risk_discovery",
+                      "must_not_include":  [
+                                               "ChatGPT Tasks"
+                                           ],
+                      "expected_primary_route":  "Workflow or Scheduled Browser Agent",
+                      "must_include":  [
+                                           "ERP",
+                                           "登录",
+                                           "Workflow"
+                                       ]
+                  },
+                  {
+                      "id":  13,
+                      "tags":  [
+                                   "ai-table",
+                                   "table-pre-check",
+                                   "feishu"
+                               ],
+                      "prompt":  "我们用飞书多维表格，里面有 500 条客户评论，我想让 AI 自动分类成「投诉 / 咨询 / 表扬 / 建议」四类，方便后续分给不同同事跟进。",
+                      "expected_behavior":  "Table Pre-Check 强命中：明确提到「飞书多维表格」+ 「自动分类」+ 「500 条 / 每条」典型行级处理。**一轮搞定**，不走完整 Triage 三问。直接出 AI Table Sub-template，工具选飞书多维 AI 字段捷径的「分类」字段；难度 ★★。给出操作步骤：导入 → 新增字段 → 探索字段捷径 → 分类 → 配置 4 个类别 + 2-3 个参考示例 → 生成前 5 行预览 → 应用全部。绝不能推 Skill / Coding Agent / Custom RAG（这些都是过度方案）。",
+                      "must_load_refs":  [
+                                             "triage.md",
+                                             "output-templates.md"
+                                         ],
+                      "should_not_trigger":  [
+                                                 "Skill recommendation",
+                                                 "Coding Agent recommendation",
+                                                 "Custom RAG recommendation",
+                                                 "full Triage three-question flow"
+                                             ],
+                      "expected_mode":  "fast_path_ai_table",
+                      "must_not_include":  [
+                                               "Skill",
+                                               "Coding Agent",
+                                               "Custom RAG"
+                                           ],
+                      "expected_primary_route":  "Feishu Base AI field",
+                      "must_include":  [
+                                           "飞书多维",
+                                           "AI 字段",
+                                           "分类",
+                                           "生成前 5 行"
+                                       ]
+                  },
+                  {
+                      "id":  14,
+                      "tags":  [
+                                   "ai-table",
+                                   "table-pre-check",
+                                   "dingtalk"
+                               ],
+                      "prompt":  "钉钉表格里每条都是客户售后留言，我要 AI 从每条留言里提取出「门店、商品ID、问题类型」三个字段。",
+                      "expected_behavior":  "Table Pre-Check 强命中：「钉钉表格」+ 「每条 + 提取 + 三个字段」典型 AI 字段提取场景。直接推钉钉 AI 表格的 **AI 字段提取**（模型默认通义千问-plus）。AI Table Sub-template 的「钉钉」部分。给出配置：在 AI 助理工作流里 → 待提取的文本引用留言列 → 要提取的字段填三个固定参数（参数名 + 类型 + 描述）。难度 ★★。",
+                      "must_load_refs":  [
+                                             "triage.md",
+                                             "output-templates.md"
+                                         ],
+                      "should_not_trigger":  [
+                                                 "Skill recommendation",
+                                                 "Coding Agent recommendation",
+                                                 "Workflow with AI Nodes as primary"
+                                             ],
+                      "expected_mode":  "fast_path_ai_table",
+                      "must_not_include":  [
+                                               "Coding Agent",
+                                               "Workflow with AI Nodes"
+                                           ],
+                      "expected_primary_route":  "DingTalk AI Table extraction",
+                      "must_include":  [
+                                           "钉钉 AI 表格",
+                                           "AI 字段提取",
+                                           "通义千问"
+                                       ]
+                  },
+                  {
+                      "id":  15,
+                      "tags":  [
+                                   "ai-table",
+                                   "anti-rag-misroute",
+                                   "notion"
+                               ],
+                      "prompt":  "我有一份 Notion 数据库，里面 200 条会议记录，希望 AI 自动给每条加一个简短摘要 + 提取 action items。这是不是要搭个 RAG？",
+                      "expected_behavior":  "用户主动问\u0027是不是要 RAG\u0027，但数据形态明显是「Notion 数据库 + 每行独立处理」→ Table Pre-Check 命中，**应明确告诉用户\u0027不是 RAG\u0027**。推 Notion AI Autofill：Summary 字段 + Custom Autofill 字段（提取 action items）。难度 ★★，5 分钟配完。Anti-Pattern 命中：v8.2 新增的\u0027数据已在表格里推 Custom RAG\u0027反例。RAG 仅作为\u0027如果你的会议记录不在数据库里、分散在 100 份 Word 里\u0027的升级路径提及。",
+                      "must_load_refs":  [
+                                             "triage.md",
+                                             "output-templates.md",
+                                             "enterprise-knowledge-rag.md"
+                                         ],
+                      "should_not_trigger":  [
+                                                 "RAG as primary recommendation",
+                                                 "Workflow recommendation"
+                                             ],
+                      "expected_special_handling":  "Must explicitly correct user\u0027s RAG assumption",
+                      "expected_mode":  "fast_path_ai_table",
+                      "must_not_include":  [
+                                               "RAG as primary",
+                                               "Workflow"
+                                           ],
+                      "expected_primary_route":  "Notion AI Autofill",
+                      "must_include":  [
+                                           "Notion AI Autofill",
+                                           "不是 RAG",
+                                           "Summary"
+                                       ]
+                  },
+                  {
+                      "id":  16,
+                      "tags":  [
+                                   "ai-table",
+                                   "domestic-ecosystem",
+                                   "dingtalk",
+                                   "research-coding"
+                               ],
+                      "prompt":  "我想做用户访谈转录内容的分析和编码，应该怎么做？",
+                      "expected_behavior":  "中文用户 + 访谈转录编码属于典型长文本分段后按行做开放编码/主题/证据句提取。应推荐 AI Table 路径，把转录切成 segment 行后加 AI 字段；AI Table 推荐必须同时露出钉钉 AI 表格和飞书多维表格 AI 字段捷径，并放在 Notion / Airtable 前面。不能只给 Notion/Airtable，也不能漏掉钉钉。给出建议列：interview_id / segment_id / raw_text / open_code / theme / pain_point / need / evidence_quote / confidence / human_review，并强调人工复核。",
+                      "must_load_refs":  [
+                                             "triage.md",
+                                             "output-templates.md"
+                                         ],
+                      "should_not_trigger":  [
+                                                 "RAG as primary recommendation",
+                                                 "Coding Agent recommendation",
+                                                 "Workflow as primary recommendation"
+                                             ],
+                      "expected_mode":  "fast_path_ai_table",
+                      "must_not_include":  [
+                                               "Coding Agent",
+                                               "RAG",
+                                               "Workflow"
+                                           ],
+                      "expected_primary_route":  "AI Table for research coding",
+                      "must_include":  [
+                                           "钉钉 AI 表格",
+                                           "飞书多维表格",
+                                           "open_code",
+                                           "human_review"
+                                       ]
+                  }
+              ]
 }

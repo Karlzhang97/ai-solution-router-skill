@@ -53,7 +53,7 @@
 打开你常用的 AI 工具（Cursor / Claude Code / Codex CLI / ChatGPT 都行），把下面这段整段发给它：
 
 ```text
-帮我安装这个 skill：https://github.com/<owner>/ai-solution-router
+帮我安装这个 skill：https://github.com/Karlzhang97/ai-solution-router-skill
 
 要求：
 - 拉到本工具默认的 skills 目录（Cursor 是 ~/.cursor/skills/，Codex 是 ~/.codex/skills/，Claude Code 是 ~/.claude/skills/，按你识别到的工具放）
@@ -65,7 +65,7 @@
 ### 一行命令（power user）
 
 ```bash
-git clone https://github.com/<owner>/ai-solution-router.git ~/.cursor/skills/ai-solution-router
+git clone https://github.com/Karlzhang97/ai-solution-router-skill.git ~/.cursor/skills/ai-solution-router
 ```
 
 Codex / Claude 同理，把目标换成 `~/.codex/skills/` 或 `~/.claude/skills/`。Windows 用 `%USERPROFILE%\.cursor\skills\` 等价路径。
@@ -75,7 +75,7 @@ Codex / Claude 同理，把目标换成 `~/.codex/skills/` 或 `~/.claude/skills
 这类托管平台没有"本地 skills 目录"，让 AI 帮你做：
 
 ```text
-读取 https://github.com/<owner>/ai-solution-router 这个仓库：
+读取 https://github.com/Karlzhang97/ai-solution-router-skill 这个仓库：
 1. 把 SKILL.md 全文贴进我这个 GPT / 智能体的系统提示词
 2. 把 references/ 下面所有 md 上传到 Knowledge / 知识库
 3. agents/openai.yaml 里的 default_prompt 设置成对话开场白

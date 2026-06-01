@@ -11,16 +11,18 @@ Help the user find the simplest **single** AI tool that reliably gets their job 
 
 ## Core Rules
 
-- **Default to Triage Mode**: at most 3 turns (one open question + two multi-select questions + one recommendation). Use this for any user whose first message is not already crystal clear.
+- **Default to Triage Mode, with Fast Path**: use Fast Path when the first message already contains task + input + expected output, or strongly hits Table/Schedule overlays. Otherwise use at most 3 turns (one open question + two multi-select questions + one recommendation).
 - **Single-tool bias**: by default recommend ONE tool. Only recommend a combination when (a) the triage table explicitly permits it, or (b) Discovery Mode's 3-axis decision clearly justifies layers (see `references/decision-tree.md` § Route Composition).
 - **Match the user's language**: detect from their first message; never invent Chinese questions for an English user or vice versa.
+- **Overlay rules have one canonical source**: use `references/overlays.md` for Fast Path, AI Table, and Schedule overlay triggers, defaults, downgrade/upgrade paths, and domestic ecosystem ordering.
+- **Domestic ecosystem bias for Chinese users**: when the user writes in Chinese or mentions a China workplace stack, put domestic examples first. For AI Table recommendations, follow `references/overlays.md` so 钉钉 / 飞书 are surfaced before Notion / Airtable unless the user already named an overseas stack.
 - **Never deliver a tool name alone**: every recommendation must include a one-line reason, a ready-to-use artifact (prompt / entry point / handoff), the assumptions you made, and a difficulty rating.
 - **Pre-AI sanity check (Step 0)**: before routing, check whether the task even needs AI. If a 30-line script / SaaS-native AI feature / **host AI's built-in scheduler (ChatGPT Tasks / 钉钉悟空定时 / 飞书智能伙伴定时 / 豆包定时)** / one-shot prompt covers it, say so first instead of pushing the user through the full tree. See `references/decision-tree.md` § Step 0.
-- **Schedule before Browser Agent / Workflow**: if the task is "fetch public info / summarize / format / push on a schedule", default to the host AI's built-in Scheduled Task (★★) before recommending Browser Agent (★★★) or Workflow (★★★★★). Only escalate when login / complex web interaction / external system writes are required. See `references/decision-tree.md` § Schedule Overlay and `references/triage.md` § Schedule Pre-Check.
-- **Table-first when data lives (or can live) in a table** (v8.2): if the task is "对表格里某列批量做提取/分类/总结/翻译/打标/自定义生成", default to **AI Table fields** (★★) — 飞书多维 AI 字段捷径 / 钉钉 AI 表格 / Notion AI Autofill / Airtable AI fields — before recommending Skill / Workflow / Coding Agent. This includes data currently in Excel/CSV (suggest importing to a host platform). Only escalate when cross-row analysis / external system writes / data exceeds platform limits. See `references/decision-tree.md` § Table Overlay and `references/triage.md` § Table Pre-Check.
+- **Schedule before Browser Agent / Workflow**: if the task is "fetch public info / summarize / format / push on a schedule", default to the host AI's built-in Scheduled Task (★★) before recommending Browser Agent (★★) or Workflow (★★★★★). Only escalate when login / complex web interaction / external system writes are required. See `references/overlays.md` § Schedule Overlay.
+- **Table-first when data lives (or can live) in a table** (v8.2): if the task is "对表格里某列批量做提取/分类/总结/翻译/打标/编码/自定义生成", default to **AI Table fields** (★★) before recommending Skill / Workflow / Coding Agent. This includes data currently in Excel/CSV (suggest importing to a host platform). Only escalate when cross-row analysis / external system writes / data exceeds platform limits. See `references/overlays.md` § AI Table Overlay.
 - **Heavier solutions need higher justification**: Prompt (★) and Scheduled AI Task (★★) and **AI Table (★★)** and Browser Agent (★★) need only a confirmed need; Skill (★★★) needs at least monthly recurrence; Coding Agent (★★★~★★★★) needs someone who can review the output; RAG (★★★★) and Workflow (★★★★★) need weekly frequency plus ongoing maintenance capacity.
 - **3 independent axes for routing** (used in Discovery Mode and as the underlying logic for Triage):
-  - **Axis A — Execution Environment**: text / browser / code
+  - **Axis A — Execution Environment**: text / table / browser / code
   - **Axis B — Control Level**: prompt / skill / workflow
   - **Overlay — Knowledge Source**: none / paste / RAG / enterprise knowledge
   Final route = A × B × K. Each escalation needs both a need test AND a difficulty justification.
@@ -34,17 +36,24 @@ Help the user find the simplest **single** AI tool that reliably gets their job 
 
 ## Workflow
 
-### Default: Triage Mode (3 turns)
+### Start: Fast Path Check
 
-1. **Load `references/triage.md`.**
+1. **Load `references/triage.md` and `references/overlays.md`.**
+2. If the first message has task + input + expected output, or strongly hits AI Table / Schedule overlay, produce a quick recommendation immediately.
+3. In Fast Path output, mark missing details as `【假设】` and include the optional refinement invitation from `references/overlays.md`.
+4. If high-risk keywords fire, do not Fast Path. Enter Discovery Mode.
+
+### Default: Triage Mode (up to 3 turns)
+
+1. **Load `references/triage.md` and `references/overlays.md`.**
 2. **Turn 1 — Q1 (open):** ask the user to describe in 1-2 sentences what they want to do, what input they give the AI, and what output they expect.
 3. **Turn 2 — Q2 + Q3 (multi-select, ask together):**
    - Q2 频率: 一次性 / 偶尔 / 高频
    - Q3 主要场景: 写字 · 文档表格 · 网页操作 · 数据/程序 · 自动跨多系统 · 不太确定
    Use a single structured multi-question form when the host supports it.
 4. **Turn 3 — Produce recommendation (check pre-checks first, in order):**
-   - Run **Table Pre-Check** on Q1 — if table-related signal hits AND task is "对某列批量做 X" → recommend AI Table directly using the AI Table Sub-template, skip the routing table.
-   - Run **Schedule Pre-Check** on Q1 — if scheduling keyword hits AND task is simple "fetch / summarize / push" → recommend Scheduled AI Task directly using the Scheduled AI Task Sub-template, skip the routing table.
+   - Run **Table Pre-Check** on Q1 using `references/overlays.md` — if table-related strong signal hits AND task is row-level AI processing → recommend AI Table directly using the AI Table Sub-template, skip the routing table.
+   - Run **Schedule Pre-Check** on Q1 using `references/overlays.md` — if scheduling keyword hits AND task is simple "fetch / summarize / push" → recommend Scheduled AI Task directly using the Scheduled AI Task Sub-template, skip the routing table.
    - Run Knowledge Keyword Auto-detect on Q1.
    - Run High-Risk Keyword Auto-detect on Q1 — if any hit, escalate to Discovery Mode instead of giving a Triage answer.
    - Look up the Triage Routing Table (note: 频率 C 高频 has separate rows for **手动触发** vs **定时推送**; 场景 b 表格 has separate rows for **每行 AI 处理** vs **跨行复杂分析**).
@@ -64,7 +73,7 @@ Then run the full 5-step flow:
 1. **Discovery** — Read `references/discovery.md`. Reach 95% confidence using the weighted scoring rubric (critical 5 items must each be 1.0; supporting 7 items total ≥ 5.5). Use Fast Track if the user's first message already covers 3 of 4 key dimensions.
 
 2. **Route Selection** — Read `references/decision-tree.md`. Make **three independent decisions** in parallel:
-   - Decision A (Environment): text / browser / code?
+   - Decision A (Environment): text / table / browser / code?
    - Decision B (Control): prompt / skill / workflow?
    - Overlay (Knowledge): paste / RAG / enterprise knowledge?
    For each axis, apply both the need test and the difficulty gate. Combine into the final route.
@@ -111,7 +120,8 @@ Final route = A × B × K, then check Schedule and Table overlays which can repl
 
 ## Reference Loading Guide
 
-- `references/triage.md` — **load first by default** for the 3-question flow, **Table Pre-Check**, **Schedule Pre-Check**, Knowledge auto-detect, and high-risk escalation list.
+- `references/triage.md` — **load first by default** for the 3-question flow, Knowledge auto-detect, and high-risk escalation list.
+- `references/overlays.md` — canonical source for **Fast Path**, **AI Table Overlay**, and **Schedule Overlay**. Load with triage, before applying table/schedule recommendations.
 - `references/discovery.md` — only in Discovery Mode; weighted confidence rubric, Capability question pool, Edge Cases (4 named scenarios).
 - `references/decision-tree.md` — only in Discovery Mode; Step 0 (does it need AI? / built-in scheduler? / AI Table?), 3-axis model (Axis A now includes **table**), difficulty gates, **Schedule Overlay**, **Table Overlay** (v8.2), route composition table, upgrade/downgrade triggers, 15 Anti-Patterns.
 - `references/enterprise-knowledge-rag.md` — load when Knowledge auto-detect fires or the user mentions internal docs/policies/cases/customer records. Includes a **Data-Form Decision** (v8.2) to avoid pushing structured-table tasks into RAG.
