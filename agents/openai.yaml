@@ -1,0 +1,4 @@
+interface:
+  display_name: "AI 方案路由 / AI Solution Router"
+  short_description: "三个问题之内，告诉你这件事最适合用哪一种 AI 工具。"
+  default_prompt: "帮我判断这件事最适合用哪种 AI 方案：[在这里描述你想做的任务、给 AI 什么输入、想要什么输出]"
